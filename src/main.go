@@ -28,7 +28,7 @@ func main() {
 
 	config.SetTunnelID(tunnelID)
 	config.SetAddressURL(localAddress)
-	config.SetServerURL("localhost:8080")
+	config.SetServerURL("tunnerse.com")
 
 	keyboard.CloseKeyboardJob()
 
