@@ -28,7 +28,7 @@ func main() {
 
 	config.SetTunnelID(tunnelID)
 	config.SetAddressURL(localAddress)
-	config.SetServerURL("tunnerse.com")
+	config.SetServerURL("localhost:8080")
 
 	keyboard.CloseKeyboardJob()
 
@@ -37,14 +37,20 @@ func main() {
 		logger.LogError("FATAL", err, true)
 	}
 
-	registeredTunnelID, err := server.RegisterTunnel()
+	_, _, err = server.RegisterTunnel()
 	if err != nil {
 		logger.LogError("REGISTER TUNNEL", err, true)
 		return
 	}
 
-	tunnelID = registeredTunnelID
-	tunnelURL := fmt.Sprintf("------> http://%s.%s", tunnelID, config.GetServerURL())
+	var tunnelURL string
+	if config.GetSubdomainBool() {
+		tunnelURL = fmt.Sprintf("------> http://%s.%s", config.GetTunnelID(), config.GetServerURL())
+	} else {
+		fmt.Print(dto.BetaWarn)
+		tunnelURL = fmt.Sprintf("------> http://%s/%s", config.GetServerURL(), config.GetTunnelID())
+	}
+
 	logger.Log("INFO", "tunnel has been registered", []logger.LogDetail{{Key: "url", Value: tunnelURL}})
 
 	server.StartTunnelLoop()

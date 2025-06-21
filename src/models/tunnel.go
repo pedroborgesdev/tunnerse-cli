@@ -24,8 +24,9 @@ type RegisterResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		Message string `json:"message"`
-		Tunnel  string `json:"tunnel"`
+		Message   string `json:"message"`
+		Subdomain bool   `json:"subdomain"`
+		Tunnel    string `json:"tunnel"`
 	} `json:"data"`
 	Status int `json:"status"`
 }

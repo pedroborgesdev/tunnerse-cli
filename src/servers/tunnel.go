@@ -6,21 +6,25 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 	"tunnerse/config"
 	"tunnerse/jobs"
 	"tunnerse/logger"
 	"tunnerse/models"
+	"tunnerse/utils"
 )
 
 type ServerService struct {
 	healtcheck *jobs.HealthJob
+	rewrite    *utils.RewriteUtils
 }
 
 // NewServerService creates and returns a new instance of ServerService with health check initialized.
 func NewServerService() *ServerService {
 	return &ServerService{
 		healtcheck: jobs.NewHealthJob(),
+		rewrite:    utils.NewRewriteUtils(),
 	}
 }
 
@@ -55,27 +59,28 @@ func (s *ServerService) CloseConnection() error {
 }
 
 // RegisterTunnel sends a registration request to the server and returns the assigned tunnel ID.
-func (s *ServerService) RegisterTunnel() (string, error) {
+func (s *ServerService) RegisterTunnel() (string, bool, error) {
 	payload := map[string]string{"name": config.GetTunnelID()}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("encode JSON: %w", err)
+		return "", false, fmt.Errorf("encode JSON: %w", err)
 	}
 
 	resp, err := http.Post(s.GetUrl("register"), "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		return "", fmt.Errorf("post register: %w", err)
+		return "", false, fmt.Errorf("post register: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var result models.RegisterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode register response. probably tunnerse server is offline")
+		return "", false, fmt.Errorf("decode register response. probably tunnerse server is offline")
 	}
 
 	config.SetTunnelID(result.Data.Tunnel)
+	config.SetSubdomainBool(result.Data.Subdomain)
 
-	return result.Data.Tunnel, nil
+	return result.Data.Tunnel, result.Data.Subdomain, nil
 }
 
 // SendResponseToServer sends the local response back to the server after processing the request.
@@ -92,7 +97,7 @@ func (s *ServerService) SendResponseToServer(data *models.ResponseData) error {
 // StartTunnelLoop starts the main loop that continuously fetches, processes, and responds to tunnel requests.
 func (s *ServerService) StartTunnelLoop() {
 	var errorTimestamps []time.Time
-	const rateLimitCount = 10
+	const rateLimitCount = 5
 	const rateLimitWindow = 10 * time.Second
 
 	s.healtcheck.StartHealthCheck()
@@ -189,6 +194,14 @@ func (s *ServerService) ForwardToLocal(req *models.RequestData) (*models.Respons
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "text/html") {
+		tunnelName := config.GetTunnelID()
+
+		body = s.rewrite.InjectBaseHref(body, tunnelName)
+		body = s.rewrite.RewriteAbsolutePaths(body, tunnelName)
 	}
 
 	return &models.ResponseData{
