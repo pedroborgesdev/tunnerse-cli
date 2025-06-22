@@ -18,6 +18,7 @@ import (
 type ServerService struct {
 	healtcheck *jobs.HealthJob
 	rewrite    *utils.RewriteUtils
+	urls       *utils.UrlsUtils
 }
 
 // NewServerService creates and returns a new instance of ServerService with health check initialized.
@@ -25,20 +26,8 @@ func NewServerService() *ServerService {
 	return &ServerService{
 		healtcheck: jobs.NewHealthJob(),
 		rewrite:    utils.NewRewriteUtils(),
+		urls:       utils.NewUrlsUtils(),
 	}
-}
-
-// GetUrl returns the appropriate server URL based on the requested method type.
-func (s *ServerService) GetUrl(method string) string {
-	switch method {
-	case "register":
-		return "http://" + config.GetServerURL() + "/register"
-	case "response":
-		return config.GetTunnelHTTPSURL() + "/response"
-	case "fetch":
-		return config.GetTunnelHTTPSURL() + "/tunnel"
-	}
-	return "undefined"
 }
 
 // CloseConnection sends a request to close the current tunnel session on the server.
@@ -66,7 +55,7 @@ func (s *ServerService) RegisterTunnel() (string, bool, error) {
 		return "", false, fmt.Errorf("encode JSON: %w", err)
 	}
 
-	resp, err := http.Post(s.GetUrl("register"), "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(s.urls.GetUrl("register"), "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		return "", false, fmt.Errorf("post register: %w", err)
 	}
@@ -90,7 +79,7 @@ func (s *ServerService) SendResponseToServer(data *models.ResponseData) error {
 		return err
 	}
 
-	_, err = http.Post(s.GetUrl("response"), "application/json", bytes.NewBuffer(jsonData))
+	_, err = http.Post(s.urls.GetUrl("response"), "application/json", bytes.NewBuffer(jsonData))
 	return err
 }
 
@@ -117,8 +106,24 @@ func (s *ServerService) StartTunnelLoop() {
 		}
 
 		reqData, err := s.FetchRequest()
+		if reqData == nil && err == nil {
+			respData := models.ResponseData{
+				StatusCode: 204,
+				Headers: map[string][]string{
+					"Tunnerse": {"healtcheck-response"},
+				},
+				Body: nil,
+			}
+			s.SendResponseToServer(&respData)
+			continue
+		}
+
 		if err != nil {
 			if err.Error() == "tunnel has closed by server" {
+				logger.LogError("TUNNEL CONNECTION", err, true)
+			}
+
+			if err.Error() == "response time exceeded. closing tunnel" {
 				logger.LogError("TUNNEL CONNECTION", err, true)
 			}
 
@@ -145,11 +150,20 @@ func (s *ServerService) StartTunnelLoop() {
 
 // FetchRequest fetches the incoming request data from the tunnel server.
 func (s *ServerService) FetchRequest() (*models.RequestData, error) {
-	resp, err := http.Get(s.GetUrl("fetch"))
+	resp, err := http.Get(s.urls.GetUrl("fetch"))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		switch resp.StatusCode {
+		case http.StatusGatewayTimeout:
+			return nil, fmt.Errorf("response time exceeded. closing tunnel")
+		default:
+			return nil, fmt.Errorf("unexpected response by server")
+		}
+	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -161,10 +175,20 @@ func (s *ServerService) FetchRequest() (*models.RequestData, error) {
 	}
 
 	var requestData models.RequestData
+
 	err = json.Unmarshal(bodyBytes, &requestData)
 	if err != nil {
-		return nil, fmt.Errorf("unexpected response by server %s", err.Error())
+		fmt.Println(string(bodyBytes))
+		return nil, fmt.Errorf("unexpected response by server: %s", err.Error())
 	}
+
+	value, ok := requestData.Headers["Tunnerse"]
+	if ok && len(value) > 0 {
+		if value[0] == "healtcheck-question" {
+			return nil, nil
+		}
+	}
+
 	return &requestData, nil
 }
 
@@ -196,12 +220,14 @@ func (s *ServerService) ForwardToLocal(req *models.RequestData) (*models.Respons
 		return nil, err
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	if strings.Contains(contentType, "text/html") {
-		tunnelName := config.GetTunnelID()
+	if !config.GetSubdomainBool() {
+		contentType := resp.Header.Get("Content-Type")
+		if strings.Contains(contentType, "text/html") {
+			tunnelName := config.GetTunnelID()
 
-		body = s.rewrite.InjectBaseHref(body, tunnelName)
-		body = s.rewrite.RewriteAbsolutePaths(body, tunnelName)
+			body = s.rewrite.InjectBaseHref(body, tunnelName)
+			body = s.rewrite.RewriteAbsolutePaths(body, tunnelName)
+		}
 	}
 
 	return &models.ResponseData{

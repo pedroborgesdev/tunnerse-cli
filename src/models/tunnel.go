@@ -1,9 +1,5 @@
 package models
 
-import (
-	"net/http"
-)
-
 // RequestData represents an HTTP request received via the tunnel, including method, path, headers, and body.
 type RequestData struct {
 	Method  string              `json:"method"`
@@ -15,7 +11,7 @@ type RequestData struct {
 // ResponseData represents the HTTP response to be sent back through the tunnel, including status, headers, and body.
 type ResponseData struct {
 	StatusCode int
-	Headers    http.Header
+	Headers    map[string][]string
 	Body       []byte
 }
 

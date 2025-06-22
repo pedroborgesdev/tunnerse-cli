@@ -10,13 +10,18 @@ import (
 	"time"
 	"tunnerse/config"
 	"tunnerse/logger"
+	"tunnerse/utils"
 )
 
-type HealthJob struct{}
+type HealthJob struct {
+	urls *utils.UrlsUtils
+}
 
 // NewHealthJob creates and returns a new instance of HealthJob.
 func NewHealthJob() *HealthJob {
-	return &HealthJob{}
+	return &HealthJob{
+		urls: utils.NewUrlsUtils(),
+	}
 }
 
 // StartHealthCheck launches a goroutine that periodically checks the health of the local API.
@@ -26,7 +31,7 @@ func (h *HealthJob) StartHealthCheck() {
 		time.Sleep(5 * time.Second)
 
 		failCount := 0
-		maxFails := 30
+		maxFails := 10
 
 		for {
 			resp, err := http.Get(config.GetAddressURL())
@@ -64,6 +69,13 @@ func (h *HealthJob) StartHealthCheck() {
 			time.Sleep(5 * time.Second)
 		}
 	}()
+
+	go func() {
+		for {
+			h.PingToServer()
+			time.Sleep(3400 * time.Second)
+		}
+	}()
 }
 
 // isConnectionRefused checks if the error string contains "connection refused".
@@ -74,6 +86,30 @@ func isConnectionRefused(err error) bool {
 // toStr converts an integer to its string representation.
 func toStr(n int) string {
 	return fmt.Sprintf("%d", n)
+}
+
+// PingToServer sends a null request to persist the tunnel lifetime
+func (h *HealthJob) PingToServer() {
+	req, err := http.NewRequest("HEAD", h.urls.GetUrl("ping"), nil)
+	if err != nil {
+		logger.LogError("FATAL", err, true)
+		return
+	}
+
+	req.Header.Set("Tunnerse", "healtcheck-question")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.LogError("FATAL", err, true)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.Header.Get("Tunnerse") == "healthcheck-conclued" {
+		logger.Log("INFO", "the server health check challenge has been overcome", []logger.LogDetail{
+			{Key: "status", Value: resp.Header.Get("Tunnerse")},
+		})
+	}
 }
 
 // CloseConnection sends a request to the server to close the current tunnel connection.
