@@ -66,14 +66,16 @@ func (h *HealthJob) StartHealthCheck() {
 				failCount = 0
 			}
 
-			time.Sleep(5 * time.Second)
+			time.Sleep(60 * time.Second)
 		}
 	}()
 
 	go func() {
+		time.Sleep(5 * time.Second)
+
 		for {
 			h.PingToServer()
-			time.Sleep(3400 * time.Second)
+			time.Sleep(3550 * time.Second)
 		}
 	}()
 }
@@ -92,7 +94,9 @@ func toStr(n int) string {
 func (h *HealthJob) PingToServer() {
 	req, err := http.NewRequest("HEAD", h.urls.GetUrl("ping"), nil)
 	if err != nil {
-		logger.LogError("FATAL", err, true)
+		logger.Log("ERROR", "error during send healthcheck challenge", []logger.LogDetail{
+			{Key: "error", Value: err.Error()},
+		})
 		return
 	}
 
@@ -100,15 +104,17 @@ func (h *HealthJob) PingToServer() {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		logger.LogError("FATAL", err, true)
+		logger.Log("ERROR", "error during process healthcheck challenge", []logger.LogDetail{
+			{Key: "error", Value: err.Error()},
+		})
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.Header.Get("Tunnerse") == "healthcheck-conclued" {
-		logger.Log("INFO", "the server health check challenge has been overcome", []logger.LogDetail{
-			{Key: "status", Value: resp.Header.Get("Tunnerse")},
-		})
+		logger.Log("HEALTHCHECK", "challenge has been overcome", []logger.LogDetail{})
+	} else {
+		logger.Log("ERROR", "healthcheck challenge has failed", []logger.LogDetail{})
 	}
 }
 

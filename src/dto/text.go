@@ -1,20 +1,57 @@
 package dto
 
 const (
-	Start string = `Thanks for using Tunnerse! ;)
-↳ temporary reverse tunnel for development and testing.
+	Welcome string = `Tunnerse - temporary reverse tunnel for development and testing.
 
-version: 1.0.1
-author: @pedroborgezs
-project: https://github.com/pedroborgzes/tunnerse-cli.git
+`
+	Commands string = `usage: tunnerse <command>
+
+commands:
+ <tunnel_name> <local_port>    create a tunnel that exposes your
+                               local application to the web.
+
+ verison    see the version of the CLI.
+ help       show this.
+	
+`
+	Help string = `Tunnerse creates a tunnel that connects the target server using Tunnerse
+Server, with your machine pointing to a local port. Tunnerse Server
+acts only as an intermediary between the requester and your machine,
+while Tunnerse CLI translates the request coming from the server to your
+local application. the same process occurs when returning the response
+from your application.
+
+usage: tunnerse <command>
+
+commands:
+ <tunnel_name> <local_port>    create a tunnel that exposes your
+                               local application to the web.
+
+ verison    see the version of the CLI.
+ help       show this.
+
+thanks for using Tunnerse ;)
+
+`
+
+	Start string = `from now on, a tunnel will be created connecting
+your local application to the entire internet. thank you
+for choosing Tunnerse for this!
 
 disclaimer:
  tunnerse only provides the tunnel connection. We are not responsible
  for transmitted content or user data.
 
 `
+	Info string = `version: 1.0.1
+author: pedroborgesdev (on GitHub)
+project: https://github.com/pedroborgesdev/tunnerse-cli.git
 
-	Usage string = `usage: tunnerse <tunnel_name> <port>`
+`
+
+	Invalid string = `invalid command usage, use 'help' to see valid usages
+	
+`
 
 	BetaWarn string = "\033[33mbeta warn:\033[0m \n tunnel ID is passed in the URL path, which may\n" +
 		" cause issues with internal navigation links. We attempt to rewrite paths\n" +

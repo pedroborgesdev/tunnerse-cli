@@ -27,7 +27,7 @@ func (k *KeyboardJob) CloseKeyboardJob() {
 		<-signalChan
 		println()
 
-		logger.Log("WARN", "closing tunnerse", nil)
+		logger.Log("WARN", "closing tunnel", nil)
 
 		err := k.healtcheck.CloseConnection()
 		if err != nil {

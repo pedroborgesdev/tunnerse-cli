@@ -86,7 +86,7 @@ func (s *ServerService) SendResponseToServer(data *models.ResponseData) error {
 // StartTunnelLoop starts the main loop that continuously fetches, processes, and responds to tunnel requests.
 func (s *ServerService) StartTunnelLoop() {
 	var errorTimestamps []time.Time
-	const rateLimitCount = 5
+	const rateLimitCount = 10
 	const rateLimitWindow = 10 * time.Second
 
 	s.healtcheck.StartHealthCheck()
@@ -102,7 +102,7 @@ func (s *ServerService) StartTunnelLoop() {
 		errorTimestamps = filtered
 
 		if len(errorTimestamps) >= rateLimitCount {
-			logger.LogError("RECEIVE REQUEST LIMIT", fmt.Errorf("max attempt exceeded"), true)
+			logger.Log("FATAL", "target server did not respond, the tunnel was closed", []logger.LogDetail{})
 		}
 
 		reqData, err := s.FetchRequest()
@@ -120,15 +120,14 @@ func (s *ServerService) StartTunnelLoop() {
 
 		if err != nil {
 			if err.Error() == "tunnel has closed by server" {
-				logger.LogError("TUNNEL CONNECTION", err, true)
+				logger.Log("FATAL", "tunnel has closed by server", []logger.LogDetail{})
 			}
 
-			if err.Error() == "response time exceeded. closing tunnel" {
-				logger.LogError("TUNNEL CONNECTION", err, true)
+			if err.Error() == "response-time-exceeded" {
+				logger.Log("FATAL", "reponse time exceeded, the tunnel was closed", []logger.LogDetail{})
 			}
 
 			errorTimestamps = append(errorTimestamps, time.Now())
-			logger.LogError("RECEIVE REQUEST", err, false)
 			continue
 		}
 
@@ -142,7 +141,7 @@ func (s *ServerService) StartTunnelLoop() {
 
 		err = s.SendResponseToServer(respData)
 		if err != nil {
-			logger.LogError("SEND RESPONSE TO SERVER", err, false)
+			logger.Log("FATAL", "error during send response to server", []logger.LogDetail{})
 			continue
 		}
 	}
@@ -159,7 +158,7 @@ func (s *ServerService) FetchRequest() (*models.RequestData, error) {
 	if resp.StatusCode != http.StatusOK {
 		switch resp.StatusCode {
 		case http.StatusGatewayTimeout:
-			return nil, fmt.Errorf("response time exceeded. closing tunnel")
+			return nil, fmt.Errorf("response-time-exceeded")
 		default:
 			return nil, fmt.Errorf("unexpected response by server")
 		}
@@ -170,9 +169,9 @@ func (s *ServerService) FetchRequest() (*models.RequestData, error) {
 		return nil, err
 	}
 
-	if bytes.HasPrefix(bodyBytes, []byte("<!-- Tunnerse by @pedroborgezs")) {
-		return nil, fmt.Errorf("tunnel has closed by server")
-	}
+	// if bytes.HasPrefix(bodyBytes, []byte("<!-- Tunnerse by @pedroborgezs")) {
+	// 	return nil, fmt.Errorf("tunnel has closed by server")
+	// }
 
 	var requestData models.RequestData
 
@@ -187,16 +186,27 @@ func (s *ServerService) FetchRequest() (*models.RequestData, error) {
 		if value[0] == "healtcheck-question" {
 			return nil, nil
 		}
+
+		switch value[0] {
+		case "healthcheck-question":
+			return nil, nil
+		case "tunnel-not-found":
+			return nil, fmt.Errorf("notfound")
+		case "tunnel-timeout":
+			return nil, fmt.Errorf("timeout")
+		case "tunnel-working":
+			return nil, fmt.Errorf("working")
+		}
 	}
 
 	return &requestData, nil
 }
 
+var httpClient = &http.Client{}
+
 // ForwardToLocal forwards the fetched request to the local service and captures the response.
 func (s *ServerService) ForwardToLocal(req *models.RequestData) (*models.ResponseData, error) {
-	client := &http.Client{}
-
-	url := fmt.Sprintf(config.GetAddressURL() + "/" + req.Path)
+	url := fmt.Sprintf("%s/%s", config.GetAddressURL(), req.Path)
 
 	request, err := http.NewRequest(req.Method, url, bytes.NewBuffer([]byte(req.Body)))
 	if err != nil {
@@ -209,7 +219,7 @@ func (s *ServerService) ForwardToLocal(req *models.RequestData) (*models.Respons
 		}
 	}
 
-	resp, err := client.Do(request)
+	resp, err := httpClient.Do(request)
 	if err != nil {
 		return nil, err
 	}

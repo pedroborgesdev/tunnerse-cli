@@ -2,7 +2,6 @@ package validators
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
 	"tunnerse/dto"
 )
@@ -26,11 +25,33 @@ func NewArgsValidator() *ArgsValidator {
 }
 
 // ValidateUsageArgs checks if the command-line arguments have the expected length.
-func (v *ArgsValidator) ValidateUsageArgs(args []string) error {
-	if len(args) != 3 {
-		return fmt.Errorf(dto.Usage)
+func (v *ArgsValidator) ValidateUsageArgs(args []string) string {
+	if len(args) > 3 {
+		return dto.Invalid
 	}
-	return nil
+
+	if len(args) > 2 {
+		if args[1] == "help" || args[1] == "version" {
+			return dto.Invalid
+		}
+	}
+
+	if len(args) == 2 {
+		switch args[1] {
+		case "help":
+			return dto.Help
+		case "version":
+			return dto.Info
+		default:
+			return dto.Invalid
+		}
+	}
+
+	if len(args) == 3 {
+		return ""
+	}
+
+	return dto.Help
 }
 
 // ValidateExposeArgs validates both the tunnel ID and the address provided as arguments.

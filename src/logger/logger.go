@@ -2,6 +2,7 @@ package logger
 
 import (
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -24,6 +25,13 @@ func Log(level string, message string, details []LogDetail) {
 	for _, detail := range details {
 		fmt.Printf("  %s%s%s: %v\n", color, detail.Key, reset, detail.Value)
 	}
+
+	if level == "FATAL" {
+		fmt.Println()
+		os.Exit(1)
+	}
+
+	fmt.Println()
 }
 
 // getLevelColor returns the ANSI color code corresponding to the log level.
@@ -33,8 +41,12 @@ func getLevelColor(level string) string {
 		return "\033[36m"
 	case "INFO":
 		return "\033[32m"
+	case "SUCCESS":
+		return "\033[32m"
 	case "WARN":
 		return "\033[33m"
+	case "HEALTHCHECK":
+		return "\033[38;2;255;105;180m"
 	case "ERROR":
 		return "\033[31m"
 	case "FATAL":

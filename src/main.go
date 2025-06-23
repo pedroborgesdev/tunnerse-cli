@@ -12,34 +12,40 @@ import (
 )
 
 func main() {
-	fmt.Print(dto.Start)
+	fmt.Print(dto.Welcome)
 
 	validator := validators.NewArgsValidator()
 	server := servers.NewServerService()
 	keyboard := jobs.NewKeyboardJob()
 
-	err := validator.ValidateUsageArgs(os.Args)
-	if err != nil {
-		fmt.Println(err.Error())
+	keyboard.CloseKeyboardJob()
+
+	msg := validator.ValidateUsageArgs(os.Args)
+	if msg != "" {
+		fmt.Print(msg)
 		os.Exit(0)
 	}
 
 	tunnelID, localAddress := os.Args[1], os.Args[2]
 
+	err := validator.ValidateExposeArgs(tunnelID, localAddress)
+	if err != nil {
+		logger.Log("FATAL", "argument error", []logger.LogDetail{
+			{Key: "error", Value: err.Error()},
+		})
+	}
+
 	config.SetTunnelID(tunnelID)
 	config.SetAddressURL(localAddress)
 	config.SetServerURL("tunnerse.com")
 
-	keyboard.CloseKeyboardJob()
-
-	err = validator.ValidateExposeArgs(tunnelID, localAddress)
-	if err != nil {
-		logger.LogError("FATAL", err, true)
-	}
+	fmt.Print(dto.Start)
 
 	_, _, err = server.RegisterTunnel()
 	if err != nil {
-		logger.LogError("REGISTER TUNNEL", err, true)
+		logger.Log("FATAL", "failed to register tunnel", []logger.LogDetail{
+			{Key: "error", Value: err.Error()},
+		})
 		return
 	}
 
@@ -51,7 +57,7 @@ func main() {
 		tunnelURL = fmt.Sprintf("------> http://%s/%s", config.GetServerURL(), config.GetTunnelID())
 	}
 
-	logger.Log("INFO", "tunnel has been registered", []logger.LogDetail{{Key: "url", Value: tunnelURL}})
+	logger.Log("SUCCESS", "tunnel has been registered", []logger.LogDetail{{Key: "url", Value: tunnelURL}})
 
 	server.StartTunnelLoop()
 }
