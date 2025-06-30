@@ -39,7 +39,7 @@ your local application to the entire internet. thank you
 for choosing Tunnerse for this!
 
 disclaimer:
- tunnerse only provides the tunnel connection. We are not responsible
+ tunnerse only provides the tunnel connection. we are not responsible
  for transmitted content or user data.
 
 `
@@ -54,6 +54,14 @@ project: https://github.com/pedroborgesdev/tunnerse-cli.git
 `
 
 	BetaWarn string = "\033[33mbeta warn:\033[0m \n tunnel ID is passed in the URL path, which may\n" +
-		" cause issues with internal navigation links. We attempt to rewrite paths\n" +
-		" by placing the ID before the path. This is experimental and may fail.\n\n"
+		" cause issues with internal navigation links. we attempt to rewrite paths\n" +
+		" by placing the ID before the path. this is experimental and may fail.\n\n"
+
+	InvalidID string = `invalid tunnel id. correct usage should only contain lowercase letters and the special character '-'.
+	
+`
+
+	InvalidPort string = `invalid port. correct usage would be only numbers from 0 to 65535.
+	
+`
 )

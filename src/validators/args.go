@@ -48,6 +48,14 @@ func (v *ArgsValidator) ValidateUsageArgs(args []string) string {
 	}
 
 	if len(args) == 3 {
+		if err := v.validateTunnelID(args[1]); err != nil {
+			return dto.InvalidID
+		}
+
+		if err := v.validateAddress(args[2]); err != nil {
+			return dto.InvalidPort
+		}
+
 		return ""
 	}
 
