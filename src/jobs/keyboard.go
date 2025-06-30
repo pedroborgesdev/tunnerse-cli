@@ -34,7 +34,6 @@ func (k *KeyboardJob) CloseKeyboardJob() {
 			return
 		}
 
-		println()
 		os.Exit(0)
 	}()
 }
