@@ -28,20 +28,13 @@ func main() {
 
 	tunnelID, localAddress := os.Args[1], os.Args[2]
 
-	err := validator.ValidateExposeArgs(tunnelID, localAddress)
-	if err != nil {
-		logger.Log("FATAL", "argument error", []logger.LogDetail{
-			{Key: "error", Value: err.Error()},
-		})
-	}
-
 	config.SetTunnelID(tunnelID)
 	config.SetAddressURL(localAddress)
 	config.SetServerURL("tunnerse.com")
 
 	fmt.Print(dto.Start)
 
-	_, _, err = server.RegisterTunnel()
+	err := server.RegisterTunnel()
 	if err != nil {
 		logger.Log("FATAL", "failed to register tunnel", []logger.LogDetail{
 			{Key: "error", Value: err.Error()},
