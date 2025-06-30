@@ -48,28 +48,28 @@ func (s *ServerService) CloseConnection() error {
 }
 
 // RegisterTunnel sends a registration request to the server and returns the assigned tunnel ID.
-func (s *ServerService) RegisterTunnel() (string, bool, error) {
+func (s *ServerService) RegisterTunnel() error {
 	payload := map[string]string{"name": config.GetTunnelID()}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return "", false, fmt.Errorf("encode JSON: %w", err)
+		return fmt.Errorf("encode JSON: %w", err)
 	}
 
 	resp, err := http.Post(s.urls.GetUrl("register"), "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		return "", false, fmt.Errorf("post register: %w", err)
+		return fmt.Errorf("post register: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var result models.RegisterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", false, fmt.Errorf("decode register response. probably tunnerse server is offline")
+		return fmt.Errorf("decode register response. probably tunnerse server is offline")
 	}
 
 	config.SetTunnelID(result.Data.Tunnel)
 	config.SetSubdomainBool(result.Data.Subdomain)
 
-	return result.Data.Tunnel, result.Data.Subdomain, nil
+	return nil
 }
 
 // SendResponseToServer sends the local response back to the server after processing the request.
