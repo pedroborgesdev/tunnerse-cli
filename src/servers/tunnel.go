@@ -206,7 +206,7 @@ var httpClient = &http.Client{}
 
 // ForwardToLocal forwards the fetched request to the local service and captures the response.
 func (s *ServerService) ForwardToLocal(req *models.RequestData) (*models.ResponseData, error) {
-	url := fmt.Sprintf("%s/%s", config.GetAddressURL(), req.Path)
+	url := fmt.Sprintf("%s%s", config.GetAddressURL(), req.Path)
 
 	request, err := http.NewRequest(req.Method, url, bytes.NewBuffer([]byte(req.Body)))
 	if err != nil {
