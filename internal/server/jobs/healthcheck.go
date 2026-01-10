@@ -121,14 +121,9 @@ func (s *LoopJob) sendPing() {
 		return
 	}
 
-	req.Header.Set("Tunnerse", "healtcheck-question")
+	req.Header.Set("Tunnerse", "healthcheck-question")
 
-	// Use a client with longer timeout for healthcheck (needs to go through tunnel)
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		logger.Log("ERROR", "error during process healthcheck challenge", []logger.LogDetail{
 			{Key: "tunnel_id", Value: s.ID},
@@ -141,12 +136,6 @@ func (s *LoopJob) sendPing() {
 	}
 	defer resp.Body.Close()
 
-	logger.Log("DEBUG", "healthcheck response received", []logger.LogDetail{
-		{Key: "tunnel_id", Value: s.ID},
-		{Key: "status_code", Value: fmt.Sprintf("%d", resp.StatusCode)},
-		{Key: "headers", Value: fmt.Sprintf("%+v", resp.Header)},
-	})
-
 	if resp.Header.Get("Tunnerse") == "healthcheck-conclued" {
 		logger.Log("HEALTHCHECK", "challenge has been overcome", []logger.LogDetail{
 			{Key: "tunnel_id", Value: s.ID},
@@ -157,8 +146,6 @@ func (s *LoopJob) sendPing() {
 	} else {
 		logger.Log("ERROR", "healthcheck challenge has failed", []logger.LogDetail{
 			{Key: "tunnel_id", Value: s.ID},
-			{Key: "expected_header", Value: "Tunnerse: healthcheck-conclued"},
-			{Key: "received_header", Value: resp.Header.Get("Tunnerse")},
 		})
 		if !s.isQuick {
 			s.repo.UpdateErrorCount(s.ID)

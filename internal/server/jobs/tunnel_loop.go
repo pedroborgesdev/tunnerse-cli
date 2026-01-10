@@ -26,6 +26,7 @@ type LoopJob struct {
 	ID          string
 	tunnelURL   string
 	localAPIURL string
+	isSubdomain bool // true if this tunnel uses subdomain, false if uses path-based routing
 	isQuick     bool
 	stopChan    chan struct{}
 	stopped     bool
@@ -71,6 +72,7 @@ func NewLoopJob(db *database.Database, ID string, port string, isSubdomain bool,
 		ID:          ID,
 		tunnelURL:   finalTunnelURL,
 		localAPIURL: localAPIURL,
+		isSubdomain: isSubdomain, // Store whether this specific tunnel uses subdomain
 		isQuick:     isQuick,
 		stopChan:    make(chan struct{}),
 	}
@@ -87,8 +89,6 @@ func (s *LoopJob) SendResponseToServer(data *models.ResponseData) error {
 	logger.Log("DEBUG", "sending response to server", []logger.LogDetail{
 		{Key: "tunnel_id", Value: s.ID},
 		{Key: "response_url", Value: responseURL},
-		{Key: "status_code", Value: fmt.Sprintf("%d", data.StatusCode)},
-		{Key: "headers", Value: fmt.Sprintf("%+v", data.Headers)},
 	})
 
 	_, err = http.Post(responseURL, "application/json", bytes.NewBuffer(jsonData))
@@ -128,7 +128,7 @@ func (s *LoopJob) StartTunnelLoop() {
 	const rateLimitWindow = 10 * time.Second
 
 	go s.healthcheckLocalAPI()
-	// go s.pingToServer()
+	go s.pingToServer()
 
 	for {
 		select {
@@ -138,6 +138,7 @@ func (s *LoopJob) StartTunnelLoop() {
 			})
 			return
 		default:
+			// Continue com o fluxo normal
 		}
 
 		now := time.Now()
@@ -152,7 +153,30 @@ func (s *LoopJob) StartTunnelLoop() {
 
 		reqData, err := s.FetchRequest()
 
-		if reqData == nil && err != nil {
+		if reqData != nil && err != nil && err.Error() == "healthcheck-question" {
+			respData := &models.ResponseData{
+				StatusCode: 204,
+				Headers: map[string][]string{
+					"Tunnerse": {"healthcheck-conclued"},
+				},
+				Body:  nil,
+				Token: reqData.Token,
+			}
+			err = s.SendResponseToServer(respData)
+			if err != nil {
+				logger.Log("ERROR", "failed to send healthcheck response", []logger.LogDetail{
+					{Key: "tunnel_id", Value: s.ID},
+					{Key: "error", Value: err.Error()},
+				})
+			}
+			continue
+		}
+
+		if reqData == nil && err == nil {
+			continue
+		}
+
+		if err != nil {
 			if err.Error() == "tunnel has closed by server" {
 				logger.Log("FATAL", "tunnel has closed by server", []logger.LogDetail{
 					{Key: "tunnel_id", Value: s.ID},
@@ -171,9 +195,28 @@ func (s *LoopJob) StartTunnelLoop() {
 
 		respData, err := s.ForwardToLocal(reqData)
 		if err != nil {
-			logger.Log("WARN", "failed to FOWARD REQUEST", []logger.LogDetail{
+			logger.Log("WARN", "failed to forward request to local API", []logger.LogDetail{
 				{Key: "tunnel_id", Value: s.ID},
+				{Key: "error", Value: err.Error()},
 			})
+
+			// Envia resposta de erro ao servidor para não deixar a requisição pendurada
+			errorResp := &models.ResponseData{
+				StatusCode: http.StatusServiceUnavailable,
+				Headers: map[string][]string{
+					"Content-Type": {"text/plain; charset=utf-8"},
+					"Tunnerse":     {"local-api-error"},
+				},
+				Token: reqData.Token,
+			}
+
+			sendErr := s.SendResponseToServer(errorResp)
+			if sendErr != nil {
+				logger.Log("ERROR", "failed to send error response", []logger.LogDetail{
+					{Key: "tunnel_id", Value: s.ID},
+					{Key: "error", Value: sendErr.Error()},
+				})
+			}
 			continue
 		}
 
@@ -192,6 +235,7 @@ func (s *LoopJob) StartTunnelLoop() {
 	}
 }
 
+// FetchRequest fetches the incoming request data from the tunnel server.
 func (s *LoopJob) FetchRequest() (*models.RequestData, error) {
 	fetchURL := s.tunnelURL + "/tunnel"
 	logger.Log("DEBUG", "fetching request from server", []logger.LogDetail{
@@ -231,16 +275,11 @@ func (s *LoopJob) FetchRequest() (*models.RequestData, error) {
 		return nil, fmt.Errorf("unexpected response by server: %s", err.Error())
 	}
 
-	logger.Log("DEBUG", "Request received from server", []logger.LogDetail{
-		{Key: "tunnel_id", Value: s.ID},
-		{Key: "method", Value: requestData.Method},
-		{Key: "path", Value: requestData.Path},
-		{Key: "headers", Value: fmt.Sprintf("%+v", requestData.Headers)},
-	})
-
 	value, ok := requestData.Headers["Tunnerse"]
 	if ok && len(value) > 0 {
 		switch value[0] {
+		case "healthcheck-question":
+			return &requestData, fmt.Errorf("healthcheck-question")
 		case "tunnel-not-found":
 			return nil, fmt.Errorf("notfound")
 		case "tunnel-timeout":
@@ -253,13 +292,26 @@ func (s *LoopJob) FetchRequest() (*models.RequestData, error) {
 	return &requestData, nil
 }
 
-var httpClient = &http.Client{}
+// Cliente HTTP com timeout para evitar requisições travadas
+var httpClient = &http.Client{
+	Timeout: 30 * time.Second, // Timeout total da requisição
+}
 
 // ForwardToLocal forwards the fetched request to the local service and captures the response.
 func (s *LoopJob) ForwardToLocal(req *models.RequestData) (*models.ResponseData, error) {
-
+	// Special route: if the first segment is /tunnerse, serve the local demo page
+	// instead of forwarding to the user's local API.
+	// Examples:
+	//   /tunnerse           -> serve demo
+	//   /tunnerse/anything  -> serve demo
 	if isTunnerseDemoPath(req.Path) {
-		return s.serveDemoHTML(req)
+		demoResp, err := serveDemoHTML(req.Path)
+		if err != nil {
+			return nil, err
+		}
+		// Propaga o token na resposta
+		demoResp.Token = req.Token
+		return demoResp, nil
 	}
 
 	// Usa o localAPIURL que já está armazenado no struct
@@ -287,15 +339,19 @@ func (s *LoopJob) ForwardToLocal(req *models.RequestData) (*models.ResponseData,
 		return nil, err
 	}
 
-	if !config.GetSubdomainBool() {
+	// Only rewrite paths if this specific tunnel does NOT use subdomain (path-based routing)
+	if !s.isSubdomain {
 		contentType := resp.Header.Get("Content-Type")
 		if strings.Contains(contentType, "text/html") {
-			tunnelName := config.GetTunnelID()
+			// Use the tunnel ID from this specific job
+			tunnelName := s.ID
+			// Inject <base> tag — browser will handle relative paths automatically
 			body = utils.InjectBaseHref(body, tunnelName)
-			body = utils.RewriteAbsolutePaths(body, tunnelName)
+			// NOTE: RewriteAbsolutePaths removed — <base> is enough and avoids double-prefixing
 		}
 	}
 
+	// Remove Content-Length para evitar conflito
 	headers := make(map[string][]string)
 	for key, values := range resp.Header {
 		if strings.ToLower(key) == "content-length" {
@@ -304,17 +360,16 @@ func (s *LoopJob) ForwardToLocal(req *models.RequestData) (*models.ResponseData,
 		headers[key] = values
 	}
 
+	// Garantir Content-Type se não existir
 	if _, ok := headers["Content-Type"]; !ok {
 		headers["Content-Type"] = []string{"text/html; charset=utf-8"}
 	}
-
-	// Include the request ID in the response
-	headers["X-Tunnerse-Request-ID"] = []string{req.RequestID}
 
 	return &models.ResponseData{
 		StatusCode: resp.StatusCode,
 		Headers:    headers,
 		Body:       body,
+		Token:      req.Token, // Propaga o token da requisição para a resposta
 	}, nil
 }
 
@@ -323,16 +378,19 @@ func isTunnerseDemoPath(path string) bool {
 	if p == "" {
 		return false
 	}
+	// normalize
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
+	// first segment == "tunnerse"
+	// matches: /tunnerse or /tunnerse/
 	if p == "/tunnerse" || strings.HasPrefix(p, "/tunnerse/") {
 		return true
 	}
 	return false
 }
 
-func (s *LoopJob) serveDemoHTML(req *models.RequestData) (*models.ResponseData, error) {
+func serveDemoHTML(requestPath string) (*models.ResponseData, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
@@ -345,9 +403,8 @@ func (s *LoopJob) serveDemoHTML(req *models.RequestData) (*models.ResponseData, 
 	}
 
 	headers := map[string][]string{
-		"Content-Type":          {"text/html; charset=utf-8"},
-		"Tunnerse":              {"demo"},
-		"X-Tunnerse-Request-ID": {req.RequestID},
+		"Content-Type": {"text/html; charset=utf-8"},
+		"Tunnerse":     {"demo"},
 	}
 
 	return &models.ResponseData{
@@ -367,6 +424,7 @@ func filterRecent(timestamps []time.Time, now time.Time, window time.Duration) [
 	return filtered
 }
 
+// closeConnection envia uma requisição ao servidor para fechar o túnel
 func (s *LoopJob) closeConnection() error {
 	payload := map[string]string{"name": s.ID}
 	data, err := json.Marshal(payload)
