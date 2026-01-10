@@ -1,21 +1,68 @@
 #!/bin/bash
-echo "Installing tunnerse..."
+echo "Installing tunnerse CLI and Server..."
 
-BIN_NAME="tunnerse"
+cd "$(dirname "$0")/.."
 
-echo "Compiling with go build..."
-go build -o "$BIN_NAME"
+BIN_CLI="tunnerse"
+BIN_SERVER="tunnerse-server"
+BIN_DIR="bin"
+SERVICE_FILE="tunnerse-server.service"
 
-if [ $? -ne 0 ]; then
-    echo "Compilation failed."
+echo "Checking for compiled binaries..."
+if [ ! -f "$BIN_DIR/$BIN_CLI" ]; then
+    echo "ERROR: $BIN_CLI not found in $BIN_DIR/"
+    echo "Please run ./scripts/build.sh first to compile the binaries."
     exit 1
 fi
 
-mkdir -p /usr/local/bin
+if [ ! -f "$BIN_DIR/$BIN_SERVER" ]; then
+    echo "ERROR: $BIN_SERVER not found in $BIN_DIR/"
+    echo "Please run ./scripts/build.sh first to compile the binaries."
+    exit 1
+fi
 
-mv "$BIN_NAME" /usr/local/bin/
+echo "Installing binaries..."
+sudo mkdir -p /usr/local/bin
 
-chmod +x /usr/local/bin/"$BIN_NAME"
+sudo cp "$BIN_DIR/$BIN_CLI" /usr/local/bin/
+sudo cp "$BIN_DIR/$BIN_SERVER" /usr/local/bin/
 
-echo "Successfully installed. Use 'tunnerse help' for more details."
+sudo chmod +x /usr/local/bin/"$BIN_CLI"
+sudo chmod +x /usr/local/bin/"$BIN_SERVER"
+
+echo "Installing runtime assets into ~/.tunnerse/..."
+TUNNERSE_HOME="$HOME/.tunnerse"
+sudo mkdir -p "$TUNNERSE_HOME"
+
+if [ -d "static" ]; then
+    sudo rm -rf "$TUNNERSE_HOME/static" 2>/dev/null || true
+    sudo cp -r "static" "$TUNNERSE_HOME/"
+else
+    echo "Warning: static/ directory not found at project root"
+fi
+
+sudo chown -R "$USER":"$USER" "$TUNNERSE_HOME" 2>/dev/null || true
+
+echo "Configuring systemd service..."
+# Cria o arquivo de serviço substituindo %i pelo usuário atual
+sed "s/%i/$USER/g" scripts/"$SERVICE_FILE" > /tmp/"$SERVICE_FILE"
+
+# Copia para o diretório de serviços do systemd
+sudo cp /tmp/"$SERVICE_FILE" /etc/systemd/system/
+sudo chmod 644 /etc/systemd/system/"$SERVICE_FILE"
+rm /tmp/"$SERVICE_FILE"
+
+# Recarrega o systemd para reconhecer o novo serviço
+sudo systemctl daemon-reload
+
+echo "Successfully installed both CLI and Server."
+echo ""
+echo "To manage the tunnerse-server daemon:"
+echo "  Start:   sudo systemctl start tunnerse-server"
+echo "  Stop:    sudo systemctl stop tunnerse-server"
+echo "  Status:  sudo systemctl status tunnerse-server"
+echo "  Enable:  sudo systemctl enable tunnerse-server  (start on boot)"
+echo "  Logs:    sudo journalctl -u tunnerse-server -f"
+echo ""
+echo "Use 'tunnerse help' for CLI details."
 echo

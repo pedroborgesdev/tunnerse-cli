@@ -1,0 +1,23 @@
+[Unit]
+Description=Tunnerse Server - Local tunnel management daemon
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+ExecStart=/usr/local/bin/tunnerse-server
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Note: Data is stored in ~/.tunnerse/ (database and logs)
+# This allows running without sudo permissions
+
+[Install]
+WantedBy=multi-user.target
