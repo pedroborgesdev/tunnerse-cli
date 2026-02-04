@@ -22,26 +22,21 @@ var (
 	logMutex sync.Mutex
 )
 
-
 func SetTunnelLogFile(tunnelID, logsDir string) error {
 	logMutex.Lock()
 	defer logMutex.Unlock()
-
 
 	if _, exists := logFiles[tunnelID]; exists {
 		return nil
 	}
 
-
 	if logsDir == "" {
 		logsDir = "logs"
 	}
 
-
 	if err := os.MkdirAll(logsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create logs directory: %w", err)
 	}
-
 
 	logPath := filepath.Join(logsDir, fmt.Sprintf("%s.log", tunnelID))
 	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -51,12 +46,10 @@ func SetTunnelLogFile(tunnelID, logsDir string) error {
 
 	logFiles[tunnelID] = file
 
-
 	fmt.Printf("✓ Log file created: %s\n", logPath)
 
 	return nil
 }
-
 
 func CloseTunnelLogFile(tunnelID string) {
 	logMutex.Lock()
@@ -85,7 +78,6 @@ func Log(level string, message string, details []LogDetail) {
 	color := getLevelColor(level)
 	reset := "\033[0m"
 
-
 	var consoleMsg string
 	if level == "DEBUG" {
 
@@ -98,7 +90,6 @@ func Log(level string, message string, details []LogDetail) {
 			timestamp, color, level, reset, message)
 	}
 
-
 	detailsMsg := ""
 	for _, detail := range details {
 		detailLine := fmt.Sprintf("  ↳ %s%s%s: %v\n", color, detail.Key, reset, detail.Value)
@@ -107,9 +98,7 @@ func Log(level string, message string, details []LogDetail) {
 		detailsMsg += detailLine
 	}
 
-
 	fmt.Print(consoleMsg)
-
 
 	isTunnelLoop := strings.Contains(file, "tunnel_loop.go") || strings.Contains(file, "healthcheck.go")
 	if isTunnelLoop {
@@ -128,13 +117,11 @@ func Log(level string, message string, details []LogDetail) {
 	}
 }
 
-
 func writeToLogFile(tunnelID, timestamp, level, file string, line int, message, details string) {
 	logMutex.Lock()
 	defer logMutex.Unlock()
 
 	logFile, exists := logFiles[tunnelID]
-	fmt.Println(logFile, exists, tunnelID)
 	if !exists {
 
 		if err := SetTunnelLogFile(tunnelID, "/home/pedroborgezs/.tunnerse/logs/"); err != nil {
@@ -147,15 +134,14 @@ func writeToLogFile(tunnelID, timestamp, level, file string, line int, message, 
 		color := getLevelColor(level)
 		reset := "\033[0m"
 
-
 		var fileMsg string
 		if level == "DEBUG" {
 
-			fileMsg = fmt.Sprintf("%s %s%s:%d%s \n↳ %s%s%s - %s\n%s",
+			fileMsg = fmt.Sprintf("[tunnerse-server] - %s %s%s:%d%s \n↳ %s%s%s - %s\n%s",
 				timestamp, color, file, line, reset, color, level, reset, message, details)
 		} else {
 
-			fileMsg = fmt.Sprintf("%s \n↳ %s%s%s - %s\n%s",
+			fileMsg = fmt.Sprintf("[tunnerse-server] %s \n↳ %s%s%s - %s\n%s",
 				timestamp, color, level, reset, message, details)
 		}
 		logFile.WriteString(fileMsg)

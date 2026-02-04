@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/pedroborgesdev/tunnerse-cli/internal/server/config"
 	"github.com/pedroborgesdev/tunnerse-cli/internal/server/database"
-	"github.com/pedroborgesdev/tunnerse-cli/internal/server/debug"
 	"github.com/pedroborgesdev/tunnerse-cli/internal/server/logger"
 	"github.com/pedroborgesdev/tunnerse-cli/internal/server/routes"
 
@@ -11,7 +10,7 @@ import (
 )
 
 func main() {
-	debug.LoadDebugConfig()
+	// debug.LoadDebugConfig()
 
 	logger.Log("INFO", "Application has been started", []logger.LogDetail{})
 

@@ -133,19 +133,6 @@ func (s *TunnelService) KillTunnel(tunnelID string) error {
 	}
 
 	go func() {
-		if job, exists := config.GetActiveJob(tunnelID); exists {
-			job.Stop()
-			config.RemoveActiveJob(tunnelID)
-		}
-
-		if isQuickTunnel {
-			delete(config.QuickTunnelURLs, tunnelID)
-		} else {
-			if err := s.repo.UpdateTunnelStatus(tunnelID, false); err != nil {
-				fmt.Printf("failed to update tunnel status: %v\n", err)
-			}
-		}
-
 		closeURL := tunnelURL + "/close"
 
 		payload := map[string]string{"name": tunnelID}
@@ -161,6 +148,20 @@ func (s *TunnelService) KillTunnel(tunnelID string) error {
 			return
 		}
 		defer resp.Body.Close()
+
+		job, exists := config.GetActiveJob(tunnelID)
+		if exists {
+			config.RemoveActiveJob(tunnelID)
+			job.Stop()
+		}
+
+		if isQuickTunnel {
+			delete(config.QuickTunnelURLs, tunnelID)
+		} else {
+			if err := s.repo.UpdateTunnelStatus(tunnelID, false); err != nil {
+				fmt.Printf("failed to update tunnel status: %v\n", err)
+			}
+		}
 	}()
 
 	return nil

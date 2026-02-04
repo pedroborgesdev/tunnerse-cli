@@ -78,7 +78,12 @@ func NewLoopJob(db *database.Database, ID string, port string, isSubdomain bool,
 	}
 
 	return job
-} // SendResponseToServer sends the local response back to the server after processing the request.
+}
+
+func printDecodedBody(resp *models.ResponseData) {
+	fmt.Println(string(resp.Body))
+}
+
 func (s *LoopJob) SendResponseToServer(data *models.ResponseData) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -86,6 +91,7 @@ func (s *LoopJob) SendResponseToServer(data *models.ResponseData) error {
 	}
 
 	responseURL := s.tunnelURL + "/response"
+	// printDecodedBody(data)
 	logger.Log("DEBUG", "sending response to server", []logger.LogDetail{
 		{Key: "tunnel_id", Value: s.ID},
 		{Key: "response_url", Value: responseURL},
@@ -148,6 +154,7 @@ func (s *LoopJob) StartTunnelLoop() {
 			logger.Log("FATAL", "target server did not respond, the tunnel was closed", []logger.LogDetail{
 				{Key: "tunnel_id", Value: s.ID},
 			})
+			s.Stop()
 			break
 		}
 
@@ -213,7 +220,6 @@ func (s *LoopJob) StartTunnelLoop() {
 			sendErr := s.SendResponseToServer(errorResp)
 			if sendErr != nil {
 				logger.Log("ERROR", "failed to send error response", []logger.LogDetail{
-					{Key: "tunnel_id", Value: s.ID},
 					{Key: "error", Value: sendErr.Error()},
 				})
 			}
@@ -289,33 +295,31 @@ func (s *LoopJob) FetchRequest() (*models.RequestData, error) {
 		}
 	}
 
+	fmt.Println(requestData.Path)
+
 	return &requestData, nil
 }
 
-// Cliente HTTP com timeout para evitar requisições travadas
 var httpClient = &http.Client{
-	Timeout: 30 * time.Second, // Timeout total da requisição
+	Timeout: 30 * time.Second,
 }
 
-// ForwardToLocal forwards the fetched request to the local service and captures the response.
 func (s *LoopJob) ForwardToLocal(req *models.RequestData) (*models.ResponseData, error) {
-	// Special route: if the first segment is /tunnerse, serve the local demo page
-	// instead of forwarding to the user's local API.
-	// Examples:
-	//   /tunnerse           -> serve demo
-	//   /tunnerse/anything  -> serve demo
 	if isTunnerseDemoPath(req.Path) {
 		demoResp, err := serveDemoHTML(req.Path)
 		if err != nil {
 			return nil, err
 		}
-		// Propaga o token na resposta
 		demoResp.Token = req.Token
 		return demoResp, nil
 	}
 
-	// Usa o localAPIURL que já está armazenado no struct
-	url := fmt.Sprintf("%s%s", s.localAPIURL, req.Path)
+	path := req.Path
+	tunnelPrefix := "/" + s.ID + "/"
+	if strings.HasPrefix(path, tunnelPrefix) {
+		path = "/" + strings.TrimPrefix(path, tunnelPrefix)
+	}
+	url := fmt.Sprintf("%s%s", s.localAPIURL, path)
 
 	request, err := http.NewRequest(req.Method, url, bytes.NewBuffer([]byte(req.Body)))
 	if err != nil {
@@ -339,19 +343,15 @@ func (s *LoopJob) ForwardToLocal(req *models.RequestData) (*models.ResponseData,
 		return nil, err
 	}
 
-	// Only rewrite paths if this specific tunnel does NOT use subdomain (path-based routing)
 	if !s.isSubdomain {
 		contentType := resp.Header.Get("Content-Type")
 		if strings.Contains(contentType, "text/html") {
-			// Use the tunnel ID from this specific job
 			tunnelName := s.ID
-			// Inject <base> tag — browser will handle relative paths automatically
-			body = utils.InjectBaseHref(body, tunnelName)
-			// NOTE: RewriteAbsolutePaths removed — <base> is enough and avoids double-prefixing
+			// body = utils.InjectBaseHref(body, tunnelName)
+			body = utils.RewriteAbsolutePaths(body, tunnelName)
 		}
 	}
 
-	// Remove Content-Length para evitar conflito
 	headers := make(map[string][]string)
 	for key, values := range resp.Header {
 		if strings.ToLower(key) == "content-length" {
@@ -360,17 +360,19 @@ func (s *LoopJob) ForwardToLocal(req *models.RequestData) (*models.ResponseData,
 		headers[key] = values
 	}
 
-	// Garantir Content-Type se não existir
 	if _, ok := headers["Content-Type"]; !ok {
 		headers["Content-Type"] = []string{"text/html; charset=utf-8"}
 	}
 
-	return &models.ResponseData{
+	var respData *models.ResponseData
+	respData = &models.ResponseData{
 		StatusCode: resp.StatusCode,
 		Headers:    headers,
 		Body:       body,
-		Token:      req.Token, // Propaga o token da requisição para a resposta
-	}, nil
+		Token:      req.Token,
+	}
+
+	return respData, nil
 }
 
 func isTunnerseDemoPath(path string) bool {
@@ -378,12 +380,10 @@ func isTunnerseDemoPath(path string) bool {
 	if p == "" {
 		return false
 	}
-	// normalize
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
-	// first segment == "tunnerse"
-	// matches: /tunnerse or /tunnerse/
+
 	if p == "/tunnerse" || strings.HasPrefix(p, "/tunnerse/") {
 		return true
 	}
@@ -424,7 +424,6 @@ func filterRecent(timestamps []time.Time, now time.Time, window time.Duration) [
 	return filtered
 }
 
-// closeConnection envia uma requisição ao servidor para fechar o túnel
 func (s *LoopJob) closeConnection() error {
 	payload := map[string]string{"name": s.ID}
 	data, err := json.Marshal(payload)

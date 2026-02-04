@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/pedroborgesdev/tunnerse-cli/internal/cli/utils"
+
 	"github.com/pedroborgesdev/tunnerse-cli/internal/cli/jobs"
 	"github.com/pedroborgesdev/tunnerse-cli/internal/cli/logger"
 	"github.com/pedroborgesdev/tunnerse-cli/internal/cli/validators"
@@ -54,11 +56,17 @@ func killRun(tunnelID string) {
 	apiURL := "http://localhost:9988/kill"
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		logger.Log("FATAL", "Failed to connect to local server", []logger.LogDetail{
-			{Key: "Error", Value: err.Error()},
-			{Key: "Hint", Value: "Make sure tunnerse-server is running"},
-		}, false)
+		if utils.IsConnRefused(err) {
+			logger.Log("FATAL", "Tunnerse local server is not online", []logger.LogDetail{
+				{Key: "Hint", Value: "Make sure tunnerse-server is running and accessible on http://localhost:9988"},
+			}, false)
+		} else {
+			logger.Log("FATAL", "Failed to connect to local API", []logger.LogDetail{
+				{Key: "Error", Value: err.Error()},
+			}, false)
+		}
 	}
+
 	defer resp.Body.Close()
 
 	// Lê a resposta
@@ -87,9 +95,7 @@ func killRun(tunnelID string) {
 		}, false)
 	}
 
-	// Verifica se houve erro na API
 	if apiResponse.Code != "success" {
-		// Verifica se é erro de túnel não encontrado
 		if apiResponse.Code == "not_found" {
 			logger.Log("ERROR", "Tunnel not found", []logger.LogDetail{
 				{Key: "Tunnel_id", Value: tunnelID},

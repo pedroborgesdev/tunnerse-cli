@@ -1,68 +1,82 @@
 #!/bin/bash
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then 
+    echo "Error: This script must be run with sudo"
+    echo "Usage: sudo ./install.sh"
+    exit 1
+fi
+
 echo "Installing tunnerse CLI and Server..."
 
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(dirname "$0")"
+cd "$SCRIPT_DIR"
 
 BIN_CLI="tunnerse"
 BIN_SERVER="tunnerse-server"
-BIN_DIR="bin"
-SERVICE_FILE="tunnerse-server.service"
 
-echo "Checking for compiled binaries..."
-if [ ! -f "$BIN_DIR/$BIN_CLI" ]; then
-    echo "ERROR: $BIN_CLI not found in $BIN_DIR/"
-    echo "Please run ./scripts/build.sh first to compile the binaries."
+# Verifica se os binários existem
+if [ ! -f "$BIN_CLI" ]; then
+    echo "Error: $BIN_CLI not found. Please compile first with: go build -o $BIN_CLI ../cmd/cli"
     exit 1
 fi
 
-if [ ! -f "$BIN_DIR/$BIN_SERVER" ]; then
-    echo "ERROR: $BIN_SERVER not found in $BIN_DIR/"
-    echo "Please run ./scripts/build.sh first to compile the binaries."
+if [ ! -f "$BIN_SERVER" ]; then
+    echo "Error: $BIN_SERVER not found. Please compile first with: go build -o $BIN_SERVER ../cmd/server"
     exit 1
 fi
 
-echo "Installing binaries..."
-sudo mkdir -p /usr/local/bin
+echo "Installing binaries to /usr/local/bin/..."
+mkdir -p /usr/local/bin
 
-sudo cp "$BIN_DIR/$BIN_CLI" /usr/local/bin/
-sudo cp "$BIN_DIR/$BIN_SERVER" /usr/local/bin/
+cp "$BIN_CLI" /usr/local/bin/
+cp "$BIN_SERVER" /usr/local/bin/
 
-sudo chmod +x /usr/local/bin/"$BIN_CLI"
-sudo chmod +x /usr/local/bin/"$BIN_SERVER"
+chmod +x /usr/local/bin/"$BIN_CLI"
+chmod +x /usr/local/bin/"$BIN_SERVER"
 
-echo "Installing runtime assets into ~/.tunnerse/..."
-TUNNERSE_HOME="$HOME/.tunnerse"
-sudo mkdir -p "$TUNNERSE_HOME"
+# Install systemd service
+echo "Installing systemd service..."
 
-if [ -d "static" ]; then
-    sudo rm -rf "$TUNNERSE_HOME/static" 2>/dev/null || true
-    sudo cp -r "static" "$TUNNERSE_HOME/"
-else
-    echo "Warning: static/ directory not found at project root"
-fi
+# Pega o usuário real (mesmo quando rodado com sudo)
+REAL_USER="${SUDO_USER:-$USER}"
 
-sudo chown -R "$USER":"$USER" "$TUNNERSE_HOME" 2>/dev/null || true
+# Cria o arquivo de serviço com o usuário correto
+cat > /tmp/tunnerse-server.service << EOF
+[Unit]
+Description=Tunnerse Server - Local tunnel management daemon
+After=network.target
 
-echo "Configuring systemd service..."
-# Cria o arquivo de serviço substituindo %i pelo usuário atual
-sed "s/%i/$USER/g" scripts/"$SERVICE_FILE" > /tmp/"$SERVICE_FILE"
+[Service]
+Type=simple
+User=$REAL_USER
+Group=$REAL_USER
+ExecStart=/usr/local/bin/tunnerse-server
+Restart=on-failure
+RestartSec=5s
 
-# Copia para o diretório de serviços do systemd
-sudo cp /tmp/"$SERVICE_FILE" /etc/systemd/system/
-sudo chmod 644 /etc/systemd/system/"$SERVICE_FILE"
-rm /tmp/"$SERVICE_FILE"
+[Install]
+WantedBy=multi-user.target
+EOF
 
-# Recarrega o systemd para reconhecer o novo serviço
-sudo systemctl daemon-reload
+# Move o serviço para o systemd
+mv /tmp/tunnerse-server.service /etc/systemd/system/
+systemctl daemon-reload
 
+echo ""
+echo "Systemd service installed successfully for user: $REAL_USER"
+echo "Service will store data in: /home/$REAL_USER/.tunnerse/"
+echo ""
+echo "To manage the service:"
+echo "  sudo systemctl enable tunnerse-server    # Enable on boot"
+echo "  sudo systemctl start tunnerse-server     # Start now"
+echo "  sudo systemctl stop tunnerse-server      # Stop"
+echo "  sudo systemctl status tunnerse-server    # Check status"
+echo "  sudo journalctl -u tunnerse-server -f    # View logs"
+
+echo ""
 echo "Successfully installed both CLI and Server."
-echo ""
-echo "To manage the tunnerse-server daemon:"
-echo "  Start:   sudo systemctl start tunnerse-server"
-echo "  Stop:    sudo systemctl stop tunnerse-server"
-echo "  Status:  sudo systemctl status tunnerse-server"
-echo "  Enable:  sudo systemctl enable tunnerse-server  (start on boot)"
-echo "  Logs:    sudo journalctl -u tunnerse-server -f"
-echo ""
 echo "Use 'tunnerse help' for CLI details."
+echo "Use 'tunnerse-server' to start the server manually."
+echo "Or use systemd to run as a service (see above)."
 echo

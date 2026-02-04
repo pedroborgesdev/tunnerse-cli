@@ -94,7 +94,6 @@ func (c *TunnelController) Kill(ctx *gin.Context) {
 
 	err := c.tunnelService.KillTunnel(req.TunnelID)
 	if err != nil {
-
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "tunnel not found") {
 			utils.NotFound(ctx, gin.H{"error": "tunnel not found", "tunnel_id": req.TunnelID})
@@ -102,8 +101,8 @@ func (c *TunnelController) Kill(ctx *gin.Context) {
 			return
 		}
 
-		utils.InternalError(ctx, gin.H{"error": err.Error()})
-		logger.Log("ERROR", "Failed to kill tunnel", []logger.LogDetail{{Key: "Error", Value: err.Error()}})
+		utils.InternalError(ctx, gin.H{"error": err.Error(), "tunnel_id": req.TunnelID})
+		logger.Log("ERROR", "Failed to kill tunnel", []logger.LogDetail{{Key: "Error", Value: err.Error()}, {Key: "tunnel_id", Value: req.TunnelID}})
 		return
 	}
 

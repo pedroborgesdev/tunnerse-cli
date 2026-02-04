@@ -55,11 +55,17 @@ func startNewTunnel(args []string) {
 	apiURL := "http://localhost:9988/new"
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		logger.Log("FATAL", "Failed to connect to local server", []logger.LogDetail{
-			{Key: "Error", Value: err.Error()},
-			{Key: "Hint", Value: "Make sure tunnerse-server is running"},
-		}, false)
+		if utils.IsConnRefused(err) {
+			logger.Log("FATAL", "Tunnerse local server is not online", []logger.LogDetail{
+				{Key: "Hint", Value: "Make sure tunnerse-server is running and accessible on http://localhost:9988"},
+			}, false)
+		} else {
+			logger.Log("FATAL", "Failed to connect to local API", []logger.LogDetail{
+				{Key: "Error", Value: err.Error()},
+			}, false)
+		}
 	}
+
 	defer resp.Body.Close()
 
 	// Lê a resposta

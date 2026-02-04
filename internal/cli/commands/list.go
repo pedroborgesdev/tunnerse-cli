@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/pedroborgesdev/tunnerse-cli/internal/cli/dto"
+	"github.com/pedroborgesdev/tunnerse-cli/internal/cli/utils"
+
 	"github.com/pedroborgesdev/tunnerse-cli/internal/cli/jobs"
 	"github.com/pedroborgesdev/tunnerse-cli/internal/cli/logger"
 
@@ -33,18 +36,23 @@ type Tunnel struct {
 }
 
 func listRun() {
-	// Faz a requisição GET para a API local
+	fmt.Print(dto.Welcome)
 	apiURL := "http://localhost:9988/list"
 	resp, err := http.Get(apiURL)
 	if err != nil {
-		logger.Log("FATAL", "Failed to connect to local server", []logger.LogDetail{
-			{Key: "Error", Value: err.Error()},
-			{Key: "Hint", Value: "Make sure tunnerse-server is running"},
-		}, false)
+		if utils.IsConnRefused(err) {
+			logger.Log("FATAL", "Tunnerse local server is not online", []logger.LogDetail{
+				{Key: "Hint", Value: "Make sure tunnerse-server is running and accessible on http://localhost:9988"},
+			}, false)
+		} else {
+			logger.Log("FATAL", "Failed to connect to local API", []logger.LogDetail{
+				{Key: "Error", Value: err.Error()},
+			}, false)
+		}
 	}
+
 	defer resp.Body.Close()
 
-	// Lê a resposta
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logger.Log("FATAL", "Failed to read server response", []logger.LogDetail{
@@ -52,7 +60,6 @@ func listRun() {
 		}, false)
 	}
 
-	// Parse da resposta
 	var apiResponse struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
@@ -70,7 +77,6 @@ func listRun() {
 		}, false)
 	}
 
-	// Verifica se houve erro na API
 	if apiResponse.Code != "success" {
 		logger.Log("FATAL", "Server returned error", []logger.LogDetail{
 			{Key: "Code", Value: apiResponse.Code},
@@ -85,10 +91,15 @@ func listRun() {
 		return
 	}
 
+	activeCount := 0
+	inactiveCount := 0
 	for _, t := range tunnels {
 		status := "Inactive"
 		if t.Active {
 			status = "Active"
+			activeCount++
+		} else {
+			inactiveCount++
 		}
 
 		if !ForApp {
@@ -101,4 +112,6 @@ func listRun() {
 			fmt.Printf("id:[%s]url:[%s]status:[%s]\n", t.ID, t.Url, status)
 		}
 	}
+
+	fmt.Printf("\n\033[36mTotal tunnels:\033[0m %d | \033[32mActive:\033[0m %d | \033[33mInactive:\033[0m %d\n\n", len(tunnels), activeCount, inactiveCount)
 }

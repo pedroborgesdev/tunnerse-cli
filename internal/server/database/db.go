@@ -7,7 +7,7 @@ import (
 	"github.com/pedroborgesdev/tunnerse-cli/internal/server/config"
 	"github.com/pedroborgesdev/tunnerse-cli/internal/server/logger"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type Database struct {
@@ -24,7 +24,7 @@ func InitDB() *Database {
 	}
 
 	dbPath := config.GetDatabasePath()
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		logger.Log("ERROR", "failed to open database", []logger.LogDetail{
 			{Key: "error", Value: err.Error()},

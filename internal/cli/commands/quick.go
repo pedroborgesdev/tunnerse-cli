@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -72,10 +74,15 @@ func startQuickTunnel(args []string) {
 
 	resp, err := http.Post("http://localhost:9988/quick", "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		logger.Log("FATAL", "Failed to connect to server", []logger.LogDetail{
-			{Key: "Error", Value: err.Error()},
-			{Key: "Hint", Value: "Make sure tunnerse-server is running"},
-		}, false)
+		if isConnRefused(err) {
+			logger.Log("FATAL", "Tunnerse local server is not online", []logger.LogDetail{
+				{Key: "Hint", Value: "Make sure tunnerse-server is running and accessible on http://localhost:9988"},
+			}, false)
+		} else {
+			logger.Log("FATAL", "Failed to connect to local API", []logger.LogDetail{
+				{Key: "Error", Value: err.Error()},
+			}, false)
+		}
 	}
 	defer resp.Body.Close()
 
@@ -175,11 +182,18 @@ func stopTunnel(tunnelID string) {
 
 	resp, err := http.Post("http://localhost:9988/kill", "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		logger.Log("ERROR", "Failed to stop tunnel", []logger.LogDetail{
-			{Key: "Error", Value: err.Error()},
-		}, false)
+		if isConnRefused(err) {
+			logger.Log("FATAL", "Tunnerse local server is not online", []logger.LogDetail{
+				{Key: "Hint", Value: "Make sure tunnerse-server is running and accessible on http://localhost:9988"},
+			}, false)
+		} else {
+			logger.Log("ERROR", "Failed to stop tunnel", []logger.LogDetail{
+				{Key: "Error", Value: err.Error()},
+			}, false)
+		}
 		return
 	}
+
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
@@ -199,14 +213,17 @@ func stopTunnel(tunnelID string) {
 	}
 
 	if resp.StatusCode != 200 {
+		var errMsg interface{}
+		if data, ok := result["data"].(map[string]interface{}); ok {
+			errMsg = data["error"]
+		}
 		logger.Log("ERROR", "Failed to stop tunnel", []logger.LogDetail{
-			{Key: "Error", Value: fmt.Sprintf("%v", result["error"])},
+			{Key: "Error", Value: fmt.Sprintf("%v", errMsg)},
 		}, false)
 		return
 	}
 }
 
-// tailLogFile faz tail -f de um arquivo de log
 func tailLogFile(logPath string) {
 	file, err := os.Open(logPath)
 	if err != nil {
@@ -251,4 +268,18 @@ func validateQuickArgs(args []string) {
 func restoreTerminalAndExitQuick(code int) {
 	utils.EnableInput()
 	os.Exit(code)
+}
+
+// isConnRefused detecta erro de conexão recusada (API local offline)
+func isConnRefused(err error) bool {
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		if netErr.Err != nil && strings.Contains(netErr.Err.Error(), "connection refused") {
+			return true
+		}
+	}
+	if strings.Contains(err.Error(), "connection refused") {
+		return true
+	}
+	return false
 }
