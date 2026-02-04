@@ -4,6 +4,8 @@
 	<p><strong>Reverse tunnels for local development, demos, and testing.</strong></p>
 </div>
 
+> You can check whether the tunneling service is running at: https://tunnerse.com
+
 ---
 
 ## What is Tunnerse?
